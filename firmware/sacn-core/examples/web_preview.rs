@@ -214,7 +214,7 @@ fn handle_post(path: &str, body: &str) {
                 let mode = match mode_str {
                     "ws2812" => ChannelMode::Ws2812 { universe: uni, start_channel: dmx, pixel_count: px },
                     "ws2812fill" => ChannelMode::Ws2812Fill { universe: uni, start_channel: dmx, pixel_count: px },
-                    "fire" => ChannelMode::Fire { pixel_count: px, control: if dmx > 0 { Some(DmxSlot { universe: uni, channel: dmx }) } else { None } },
+                    "fire" => ChannelMode::Fire { pixel_count: px, control: if dmx > 0 { Some(DmxSlot { universe: uni, channel: dmx.clamp(1, 510) }) } else { None } },
                     "pwm" => ChannelMode::Pwm { universe: uni, dmx_channel: dmx },
                     _ => ChannelMode::Off,
                 };

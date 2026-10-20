@@ -11,3 +11,6 @@ codegen-units = 1
 
 [profile.dev.package.firmware]
 opt-level = 1
+
+[patch.crates-io]
+embassy-net-wiznet = { path = "patches/embassy-net-wiznet" }

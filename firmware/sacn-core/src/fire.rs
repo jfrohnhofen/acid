@@ -111,6 +111,141 @@ pub fn sparking_for_level(level: u8) -> u8 {
     ((DEFAULT_SPARKING as u16 * level as u16 + 127) / 255) as u8
 }
 
+fn hash2d(x: u32, y: u32) -> u8 {
+    let mut h = x.wrapping_mul(0x3747_6557) ^ y.wrapping_mul(0x68E3_1DA4);
+    h = (h ^ (h >> 13)).wrapping_mul(0x27D4_EB2D);
+    (h ^ (h >> 15)) as u8
+}
+
+/// 2D smooth integer Perlin/Value noise in range 0..=255.
+pub fn inoise8(x: u32, y: u32) -> u8 {
+    let gx = x >> 8;
+    let gy = y >> 8;
+    let fx = (x & 0xFF) as u32;
+    let fy = (y & 0xFF) as u32;
+
+    // Smoothstep: s(t) = 3*t^2 - 2*t^3
+    let sx = (fx * fx * (768 - 2 * fx)) >> 16;
+    let sy = (fy * fy * (768 - 2 * fy)) >> 16;
+
+    let v00 = hash2d(gx, gy) as i32;
+    let v10 = hash2d(gx.wrapping_add(1), gy) as i32;
+    let v01 = hash2d(gx, gy.wrapping_add(1)) as i32;
+    let v11 = hash2d(gx.wrapping_add(1), gy.wrapping_add(1)) as i32;
+
+    let sx = sx as i32;
+    let sy = sy as i32;
+
+    let top = v00 + (((v10 - v00) * sx) >> 8);
+    let bot = v01 + (((v11 - v01) * sx) >> 8);
+    let val = top + (((bot - top) * sy) >> 8);
+
+    val.clamp(0, 255) as u8
+}
+
+/// Quadratic ease-in-out curve for natural, organic acceleration.
+pub fn quadratic_ease_in_out(p: u8) -> u8 {
+    let p = p as u32;
+    if p < 128 {
+        ((2 * p * p) / 255).min(255) as u8
+    } else {
+        let inv = 255 - p;
+        (255 - (2 * inv * inv) / 255).min(255) as u8
+    }
+}
+
+/// Render procedural fire effect across all pixels in the strip into RGB pixels.
+/// `dimmer`: 0..=255 brightness scaling.
+/// `speed`: 0..=255 animation speed (128 = default natural speed).
+/// `yellow_to_red`: 0..=255 color tint (0 = bright yellow/gold, 128 = balanced natural fire, 255 = deep crimson red).
+pub fn render_fire_pixels(
+    now_ms: u64,
+    dimmer: u8,
+    speed: u8,
+    yellow_to_red: u8,
+    out: &mut [Rgb8],
+) {
+    if dimmer == 0 {
+        out.fill(Rgb8::BLACK);
+        return;
+    }
+
+    let speed_mult = 30 + ((speed as u64) * 225) / 255;
+    let time = (now_ms * speed_mult) / 128;
+    let max_green = ((255 - yellow_to_red as u32) * 130) / 255;
+
+    for (i, px) in out.iter_mut().enumerate() {
+        let n = inoise8((i as u32).wrapping_mul(250), (time.wrapping_add(i as u64) / 5) as u32);
+        let ni = inoise8((i as u32).wrapping_mul(500), (time.wrapping_add(i as u64) / 3) as u32);
+
+        let v = quadratic_ease_in_out(n) as u32;
+        let vi_raw = quadratic_ease_in_out(ni) as u32;
+
+        let vi = 38 + (vi_raw * (255 - 38)) / 255;
+        let red_base = 140 + (v * 115) / 255;
+        let mut red = ((vi * red_base) / 255) as u8;
+        let mut yellow = ((vi * ((v * max_green) / 255)) / 255) as u8;
+
+        if dimmer < 255 {
+            red = ((red as u16 * dimmer as u16) / 255) as u8;
+            yellow = ((yellow as u16 * dimmer as u16) / 255) as u8;
+        }
+
+        *px = Rgb8::new(red, yellow, 0);
+    }
+}
+
+/// Render procedural fire effect directly into raw wire bytes (GRB order for WS2812).
+/// `dimmer`: 0..=255 brightness scaling.
+/// `speed`: 0..=255 animation speed (128 = default natural speed).
+/// `yellow_to_red`: 0..=255 color tint (0 = bright yellow/gold, 128 = balanced natural fire, 255 = deep crimson red).
+pub fn render_fire_wire_bytes(
+    now_ms: u64,
+    pixel_count: usize,
+    dimmer: u8,
+    speed: u8,
+    yellow_to_red: u8,
+    out: &mut [u8],
+) -> usize {
+    let bytes_needed = pixel_count * 3;
+    let total = bytes_needed.min(out.len());
+    let pixels = total / 3;
+
+    if dimmer == 0 {
+        out[..total].fill(0);
+        return total;
+    }
+
+    let speed_mult = 30 + ((speed as u64) * 225) / 255;
+    let time = (now_ms * speed_mult) / 128;
+    let max_green = ((255 - yellow_to_red as u32) * 130) / 255;
+
+    for i in 0..pixels {
+        let n = inoise8((i as u32).wrapping_mul(250), (time.wrapping_add(i as u64) / 5) as u32);
+        let ni = inoise8((i as u32).wrapping_mul(500), (time.wrapping_add(i as u64) / 3) as u32);
+
+        let v = quadratic_ease_in_out(n) as u32;
+        let vi_raw = quadratic_ease_in_out(ni) as u32;
+
+        let vi = 38 + (vi_raw * (255 - 38)) / 255;
+        let red_base = 140 + (v * 115) / 255;
+        let mut red = ((vi * red_base) / 255) as u8;
+        let mut yellow = ((vi * ((v * max_green) / 255)) / 255) as u8;
+
+        if dimmer < 255 {
+            red = ((red as u16 * dimmer as u16) / 255) as u8;
+            yellow = ((yellow as u16 * dimmer as u16) / 255) as u8;
+        }
+
+        let base = i * 3;
+        out[base] = yellow;   // G on WS2812 wire
+        out[base + 1] = red;  // R on WS2812 wire
+        out[base + 2] = 0;    // B on WS2812 wire
+    }
+
+    total
+}
+
 /// Maps a heat value (0..=255) to a black -> red -> yellow -> white gradient,
 /// matching FastLED's `HeatColor`.
 pub fn heat_to_color(heat: u8) -> Rgb8 {
@@ -191,5 +326,56 @@ mod tests {
         a.render(&mut out_a);
         b.render(&mut out_b);
         assert_eq!(out_a, out_b);
+    }
+
+    #[test]
+    fn test_noise_fire_renders_all_pixels() {
+        let mut pixels = [Rgb8::BLACK; 60];
+        render_fire_pixels(1000, 255, 128, 128, &mut pixels);
+        for (i, px) in pixels.iter().enumerate() {
+            assert!(
+                px.r > 0,
+                "pixel {} should have non-zero red component, got {:?}",
+                i, px
+            );
+        }
+    }
+
+    #[test]
+    fn test_noise_fire_wire_bytes() {
+        let mut wire = [0u8; 90];
+        let written = render_fire_wire_bytes(2500, 30, 255, 128, 128, &mut wire);
+        assert_eq!(written, 90);
+        // Ensure every pixel has non-zero red (wire byte 1 for GRB)
+        for i in 0..30 {
+            let r = wire[i * 3 + 1];
+            assert!(r > 0, "pixel {} wire red must be > 0", i);
+        }
+    }
+
+    #[test]
+    fn test_noise_fire_dimmer_zero_is_black() {
+        let mut wire = [255u8; 30];
+        let written = render_fire_wire_bytes(1000, 10, 0, 128, 128, &mut wire);
+        assert_eq!(written, 30);
+        assert!(wire.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_noise_fire_yellow_to_red_tint() {
+        let mut yellow_wire = [0u8; 30];
+        let mut red_wire = [0u8; 30];
+        // yellow_to_red = 0 (yellow)
+        render_fire_wire_bytes(1000, 10, 255, 128, 0, &mut yellow_wire);
+        // yellow_to_red = 255 (red)
+        render_fire_wire_bytes(1000, 10, 255, 128, 255, &mut red_wire);
+
+        // At 255 (red), green (byte 0 in GRB) must be 0
+        for i in 0..10 {
+            assert_eq!(red_wire[i * 3], 0, "pixel {} green should be 0 for pure red", i);
+        }
+        // At 0 (yellow), green (byte 0 in GRB) must be greater than red_wire's green
+        let total_green_yellow: u32 = (0..10).map(|i| yellow_wire[i * 3] as u32).sum();
+        assert!(total_green_yellow > 0, "yellow mode should have prominent green component");
     }
 }

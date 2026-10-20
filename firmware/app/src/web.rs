@@ -239,7 +239,7 @@ fn parse_channel(
             control: if dmx > 0 {
                 Some(DmxSlot {
                     universe: uni.clamp(1, 63999),
-                    channel: dmx.clamp(1, 512),
+                    channel: dmx.clamp(1, 510),
                 })
             } else {
                 None
@@ -424,8 +424,10 @@ pub async fn post_save_outputs() -> impl IntoResponse {
         let cfg_guard = APP_CONFIG.lock().await;
         *cfg_guard
     };
-    let _ = crate::flash::save_config(&cfg).await;
-    "ok"
+    match crate::flash::save_config(&cfg).await {
+        Ok(()) => (picoserve::response::StatusCode::OK, "ok"),
+        Err(()) => (picoserve::response::StatusCode::INTERNAL_SERVER_ERROR, "error"),
+    }
 }
 
 pub async fn post_save_outputs_form() -> impl IntoResponse {
@@ -483,8 +485,8 @@ pub async fn post_channel_test(
 
         let ch_mode_str = form.ch_mode.as_str();
         let applicable = match ch_mode_str {
-            "ws2812" | "ws2812fill" => true,
-            "fire" | "pwm" => matches!(
+            "ws2812" | "ws2812fill" | "fire" => true,
+            "pwm" => matches!(
                 pattern,
                 sacn_core::test_pattern::TestPattern::Off
                     | sacn_core::test_pattern::TestPattern::FullWhite

@@ -20,6 +20,8 @@ pub enum TestPattern {
     Rainbow = 3,
     /// Smooth breathing triangle pulse (0% -> 100% -> 0%) over 2000ms.
     Breathe = 4,
+    /// Single white pixel tracing along the strip to easily verify pixel order and count.
+    Tracer = 5,
 }
 
 impl TestPattern {
@@ -30,6 +32,7 @@ impl TestPattern {
             2 => Self::RgbCycle,
             3 => Self::Rainbow,
             4 => Self::Breathe,
+            5 => Self::Tracer,
             _ => Self::Off,
         }
     }
@@ -47,6 +50,7 @@ impl TestPattern {
             Self::RgbCycle => "Smooth Color Cycle",
             Self::Rainbow => "Rainbow Wave",
             Self::Breathe => "Breathe / Pulse (0-100%)",
+            Self::Tracer => "Pixel Tracer",
         }
     }
 
@@ -55,8 +59,9 @@ impl TestPattern {
         use crate::channel::ChannelMode;
         match mode {
             ChannelMode::Off => false,
-            ChannelMode::Ws2812 { .. } | ChannelMode::Ws2812Fill { .. } => true,
-            ChannelMode::Fire { .. } => matches!(self, Self::Off | Self::FullWhite | Self::Breathe),
+            ChannelMode::Ws2812 { .. }
+            | ChannelMode::Ws2812Fill { .. }
+            | ChannelMode::Fire { .. } => true,
             ChannelMode::Pwm { .. } => matches!(self, Self::Off | Self::FullWhite | Self::Breathe),
         }
     }
@@ -92,6 +97,13 @@ impl TestPattern {
                     ((cycle_ms as u32 - t) * 255 / (cycle_ms as u32 / 2)) as u8
                 };
                 out.fill(Rgb8::new(duty, duty, duty));
+            }
+            Self::Tracer => {
+                out.fill(Rgb8::BLACK);
+                if !out.is_empty() {
+                    let idx = ((now_ms / 35) as usize) % out.len();
+                    out[idx] = Rgb8::new(255, 255, 255);
+                }
             }
         }
     }
@@ -140,6 +152,18 @@ impl TestPattern {
                 };
                 out[..total].fill(duty);
             }
+            Self::Tracer => {
+                out[..total].fill(0);
+                if pixels > 0 {
+                    let idx = ((now_ms / 35) as usize) % pixels;
+                    let base = idx * 3;
+                    if base + 2 < total {
+                        out[base] = 255;     // G
+                        out[base + 1] = 255; // R
+                        out[base + 2] = 255; // B
+                    }
+                }
+            }
         }
         total
     }
@@ -167,6 +191,13 @@ impl TestPattern {
                     (t * 255 / (cycle_ms as u32 / 2)) as u8
                 } else {
                     ((cycle_ms as u32 - t) * 255 / (cycle_ms as u32 / 2)) as u8
+                }
+            }
+            Self::Tracer => {
+                if (now_ms % 1000) < 100 {
+                    255
+                } else {
+                    0
                 }
             }
         }
@@ -203,10 +234,27 @@ mod tests {
         assert_eq!(TestPattern::from_u8(2), TestPattern::RgbCycle);
         assert_eq!(TestPattern::from_u8(3), TestPattern::Rainbow);
         assert_eq!(TestPattern::from_u8(4), TestPattern::Breathe);
+        assert_eq!(TestPattern::from_u8(5), TestPattern::Tracer);
         assert_eq!(TestPattern::from_u8(99), TestPattern::Off);
 
         assert_eq!(TestPattern::FullWhite.as_u8(), 1);
         assert_eq!(TestPattern::Rainbow.as_u8(), 3);
+        assert_eq!(TestPattern::Tracer.as_u8(), 5);
+    }
+
+    #[test]
+    fn test_render_pixels_tracer() {
+        let mut pixels = [Rgb8::BLACK; 10];
+        TestPattern::Tracer.render_pixels(0, &mut pixels);
+        assert_eq!(pixels[0], Rgb8::new(255, 255, 255));
+        for px in &pixels[1..] {
+            assert_eq!(*px, Rgb8::BLACK);
+        }
+
+        // After 35ms, pixel 1 is lit
+        TestPattern::Tracer.render_pixels(35, &mut pixels);
+        assert_eq!(pixels[0], Rgb8::BLACK);
+        assert_eq!(pixels[1], Rgb8::new(255, 255, 255));
     }
 
     #[test]
@@ -275,8 +323,9 @@ mod tests {
         assert!(TestPattern::Breathe.is_applicable_to(&fill));
 
         let fire = ChannelMode::Fire { pixel_count: 30, control: None };
-        assert!(!TestPattern::Rainbow.is_applicable_to(&fire));
-        assert!(!TestPattern::RgbCycle.is_applicable_to(&fire));
+        assert!(TestPattern::Rainbow.is_applicable_to(&fire));
+        assert!(TestPattern::RgbCycle.is_applicable_to(&fire));
+        assert!(TestPattern::Tracer.is_applicable_to(&fire));
         assert!(TestPattern::FullWhite.is_applicable_to(&fire));
         assert!(TestPattern::Breathe.is_applicable_to(&fire));
 

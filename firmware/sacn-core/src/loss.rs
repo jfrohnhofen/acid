@@ -33,21 +33,31 @@ impl Default for LossConfig {
 
 impl LossConfig {
     /// Output gain (0..=255) given the time since the universe last received
-    /// a frame. `None` means nothing was ever received (or the source sent a
-    /// stream-terminated packet and the caller wants an immediate loss): the
-    /// gain is 0 for every behavior, since there is no data to hold.
-    pub fn gain(&self, ms_since_last_frame: Option<u32>) -> u8 {
+    /// a frame and whether the stream was marked terminated.
+    ///
+    /// If `ms_since_last_frame` is `None` (nothing was ever received), the gain is 0
+    /// for all behaviors since there is no data to hold.
+    ///
+    /// If `terminated` is true (e.g. sACN Stream_Terminated packet received),
+    /// loss processing triggers immediately without waiting for `timeout_ms`.
+    /// When `self.behavior == LossBehavior::Hold`, `gain` returns 255 so the last
+    /// received frame is held indefinitely.
+    pub fn gain(&self, ms_since_last_frame: Option<u32>, terminated: bool) -> u8 {
         let Some(since) = ms_since_last_frame else {
             return 0;
         };
-        if since < self.timeout_ms {
+        if !terminated && since < self.timeout_ms {
             return 255;
         }
         match self.behavior {
             LossBehavior::Hold => 255,
             LossBehavior::Blackout => 0,
             LossBehavior::Fade { ms } => {
-                let elapsed = (since - self.timeout_ms) as u64;
+                let elapsed = if terminated {
+                    since as u64
+                } else {
+                    (since - self.timeout_ms) as u64
+                };
                 let ms = ms as u64;
                 if ms == 0 || elapsed >= ms {
                     0
@@ -70,38 +80,52 @@ mod tests {
     #[test]
     fn full_gain_before_timeout_for_all_behaviors() {
         for b in [LossBehavior::Hold, LossBehavior::Blackout, LossBehavior::Fade { ms: 500 }] {
-            assert_eq!(cfg(b).gain(Some(0)), 255);
-            assert_eq!(cfg(b).gain(Some(999)), 255);
+            assert_eq!(cfg(b).gain(Some(0), false), 255);
+            assert_eq!(cfg(b).gain(Some(999), false), 255);
         }
     }
 
     #[test]
     fn never_received_is_dark_for_all_behaviors() {
         for b in [LossBehavior::Hold, LossBehavior::Blackout, LossBehavior::Fade { ms: 500 }] {
-            assert_eq!(cfg(b).gain(None), 0);
+            assert_eq!(cfg(b).gain(None, false), 0);
+            assert_eq!(cfg(b).gain(None, true), 0);
         }
     }
 
     #[test]
     fn hold_keeps_full_gain_forever() {
-        assert_eq!(cfg(LossBehavior::Hold).gain(Some(1000)), 255);
-        assert_eq!(cfg(LossBehavior::Hold).gain(Some(u32::MAX)), 255);
+        assert_eq!(cfg(LossBehavior::Hold).gain(Some(1000), false), 255);
+        assert_eq!(cfg(LossBehavior::Hold).gain(Some(u32::MAX), false), 255);
+        // And when stream is terminated!
+        assert_eq!(cfg(LossBehavior::Hold).gain(Some(0), true), 255);
+        assert_eq!(cfg(LossBehavior::Hold).gain(Some(5000), true), 255);
     }
 
     #[test]
-    fn blackout_goes_dark_at_timeout() {
-        assert_eq!(cfg(LossBehavior::Blackout).gain(Some(1000)), 0);
-        assert_eq!(cfg(LossBehavior::Blackout).gain(Some(5000)), 0);
+    fn blackout_goes_dark_at_timeout_and_immediately_on_termination() {
+        assert_eq!(cfg(LossBehavior::Blackout).gain(Some(1000), false), 0);
+        assert_eq!(cfg(LossBehavior::Blackout).gain(Some(5000), false), 0);
+        assert_eq!(cfg(LossBehavior::Blackout).gain(Some(0), true), 0);
     }
 
     #[test]
     fn fade_ramps_down_after_timeout() {
         let c = cfg(LossBehavior::Fade { ms: 1000 });
-        assert_eq!(c.gain(Some(1000)), 255);
-        assert_eq!(c.gain(Some(1500)), 128);
-        assert_eq!(c.gain(Some(1999)), 1);
-        assert_eq!(c.gain(Some(2000)), 0);
-        assert_eq!(c.gain(Some(9999)), 0);
+        assert_eq!(c.gain(Some(1000), false), 255);
+        assert_eq!(c.gain(Some(1500), false), 128);
+        assert_eq!(c.gain(Some(1999), false), 1);
+        assert_eq!(c.gain(Some(2000), false), 0);
+        assert_eq!(c.gain(Some(9999), false), 0);
+    }
+
+    #[test]
+    fn fade_ramps_down_immediately_on_termination() {
+        let c = cfg(LossBehavior::Fade { ms: 1000 });
+        assert_eq!(c.gain(Some(0), true), 255);
+        assert_eq!(c.gain(Some(500), true), 128);
+        assert_eq!(c.gain(Some(999), true), 1);
+        assert_eq!(c.gain(Some(1000), true), 0);
     }
 
     #[test]
@@ -109,7 +133,7 @@ mod tests {
         let c = cfg(LossBehavior::Fade { ms: 777 });
         let mut prev = 255u8;
         for t in (1000..2000).step_by(7) {
-            let g = c.gain(Some(t));
+            let g = c.gain(Some(t), false);
             assert!(g <= prev, "gain rose at t={t}");
             prev = g;
         }
@@ -117,7 +141,8 @@ mod tests {
 
     #[test]
     fn zero_length_fade_acts_like_blackout() {
-        assert_eq!(cfg(LossBehavior::Fade { ms: 0 }).gain(Some(1000)), 0);
+        assert_eq!(cfg(LossBehavior::Fade { ms: 0 }).gain(Some(1000), false), 0);
+        assert_eq!(cfg(LossBehavior::Fade { ms: 0 }).gain(Some(0), true), 0);
     }
 
     #[test]

@@ -56,18 +56,37 @@ impl UniverseStore {
     }
 
     /// Update universe data.
-    pub fn update(&mut self, universe: u16, sequence_number: u8, data: &[u8], now: Instant) {
+    pub fn update(
+        &mut self,
+        universe: u16,
+        sequence_number: u8,
+        data: &[u8],
+        terminated: bool,
+        now: Instant,
+    ) {
         if let Some(pos) = self
             .slots
             .iter()
             .position(|s| matches!(s, Some(slot) if slot.universe == universe))
         {
             let slot = self.slots[pos].as_mut().unwrap();
+            slot.sequence_number = sequence_number;
+            slot.packets_received = slot.packets_received.wrapping_add(1);
+
+            if terminated {
+                // E1.31 Section 6.2.4.1 mandates sending 3 identical stream-termination packets.
+                // Only start loss-of-signal processing on the first packet; ignore retransmissions
+                // so the fade timer is not reset 3 times.
+                if !slot.terminated {
+                    slot.terminated = true;
+                    slot.last_received = Some(now);
+                }
+                return;
+            }
+
             slot.data.fill(0);
             let len = data.len().min(DMX_UNIVERSE_SIZE);
             slot.data[..len].copy_from_slice(&data[..len]);
-            slot.sequence_number = sequence_number;
-            slot.packets_received = slot.packets_received.wrapping_add(1);
             slot.last_received = Some(now);
             slot.terminated = false;
             return;
@@ -105,7 +124,7 @@ impl UniverseStore {
             sequence_number,
             packets_received: 1,
             last_received: Some(now),
-            terminated: false,
+            terminated,
         });
     }
 

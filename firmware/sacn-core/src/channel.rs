@@ -155,7 +155,7 @@ impl ChannelMode {
                 Some(DmxRange { universe, start: start_channel, len: 3 })
             }
             ChannelMode::Fire { control, .. } => {
-                control.map(|c| DmxRange { universe: c.universe, start: c.channel, len: 1 })
+                control.map(|c| DmxRange { universe: c.universe, start: c.channel, len: 3 })
             }
         }
     }
@@ -229,6 +229,56 @@ pub fn fire_dimmer(control: Option<DmxSlot>, universe_data: Option<&[u8]>) -> u8
         (None, _) => 255,
         (Some(_), None) => 0,
         (Some(slot), Some(data)) => pwm_level_from_universe(data, slot.channel),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FireControls {
+    pub dimmer: u8,
+    pub speed: u8,
+    pub yellow_to_red: u8,
+}
+
+impl Default for FireControls {
+    fn default() -> Self {
+        Self {
+            dimmer: 255,
+            speed: 128,
+            yellow_to_red: 128,
+        }
+    }
+}
+
+/// Extracts the 3 fire controls (dimmer, speed, yellow_to_red) from universe DMX data.
+/// Channel 1: Dimmer (0..=255)
+/// Channel 2: Speed (0..=255, default 128)
+/// Channel 3: Yellow -> Red (0 = yellow, 255 = red, default 128)
+pub fn fire_controls(control: Option<DmxSlot>, universe_data: Option<&[u8]>) -> FireControls {
+    match (control, universe_data) {
+        (None, _) => FireControls::default(),
+        (Some(_), None) => FireControls {
+            dimmer: 0,
+            speed: 128,
+            yellow_to_red: 128,
+        },
+        (Some(slot), Some(data)) => {
+            let dimmer = pwm_level_from_universe(data, slot.channel);
+            let speed = if slot.channel < 512 {
+                pwm_level_from_universe(data, slot.channel + 1)
+            } else {
+                128
+            };
+            let yellow_to_red = if slot.channel < 511 {
+                pwm_level_from_universe(data, slot.channel + 2)
+            } else {
+                128
+            };
+            FireControls {
+                dimmer,
+                speed,
+                yellow_to_red,
+            }
+        }
     }
 }
 
@@ -501,7 +551,7 @@ mod tests {
             pixel_count: 5,
             control: Some(DmxSlot { universe: 9, channel: 2 }),
         };
-        assert_eq!(fire.dmx_range(), Some(DmxRange { universe: 9, start: 2, len: 1 }));
+        assert_eq!(fire.dmx_range(), Some(DmxRange { universe: 9, start: 2, len: 3 }));
         assert_eq!(fire.universe(), Some(9));
     }
 

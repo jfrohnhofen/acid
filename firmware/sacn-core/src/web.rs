@@ -399,6 +399,7 @@ pub fn render_channel_row<W: core::fmt::Write>(
     let is_t2 = ch.test_mode == 2;
     let is_t3 = ch.test_mode == 3;
     let is_t4 = ch.test_mode == 4;
+    let is_t5 = ch.test_mode == 5;
     let test_cls = if is_t0 { "" } else { " is-testing" };
 
     write!(
@@ -428,7 +429,7 @@ pub fn render_channel_row<W: core::fmt::Write>(
         ChannelMode::Pwm { universe, dmx_channel } => (universe, dmx_channel, 1),
         ChannelMode::Fire { control, .. } => {
             if let Some(c) = control {
-                (c.universe, c.channel, 1)
+                (c.universe, (c.channel + 2).min(512), 3)
             } else {
                 (0, 0, 0)
             }
@@ -489,20 +490,22 @@ pub fn render_channel_row<W: core::fmt::Write>(
     )?;
 
     match ch.mode {
-        ChannelMode::Ws2812 { .. } | ChannelMode::Ws2812Fill { .. } => {
+        ChannelMode::Ws2812 { .. } | ChannelMode::Ws2812Fill { .. } | ChannelMode::Fire { .. } => {
             write!(
                 w,
                 "<option value=\"3\"{}>Rainbow Wave</option>\
                  <option value=\"2\"{}>Color Cycle</option>\
+                 <option value=\"5\"{}>Pixel Tracer</option>\
                  <option value=\"1\"{}>100% White</option>\
                  <option value=\"4\"{}>Breathe</option>",
                 if is_t3 { " selected" } else { "" },
                 if is_t2 { " selected" } else { "" },
+                if is_t5 { " selected" } else { "" },
                 if is_t1 { " selected" } else { "" },
                 if is_t4 { " selected" } else { "" },
             )?;
         }
-        ChannelMode::Fire { .. } | ChannelMode::Pwm { .. } => {
+        ChannelMode::Pwm { .. } => {
             write!(
                 w,
                 "<option value=\"1\"{}>100% Full On</option>\
@@ -610,16 +613,17 @@ body:'ch='+encodeURIComponent(ch)+'&test='+encodeURIComponent(test)+'&ch_mode='+
 }\
 function getTestOpts(m){\
 var n='<option value=\"0\">Live (sACN)</option>';\
-if(m==='ws2812'||m==='ws2812fill'){\
-return n+'<option value=\"3\">Rainbow Wave</option><option value=\"2\">Color Cycle</option><option value=\"1\">100% White</option><option value=\"4\">Breathe</option>';\
-}else if(m==='fire'||m==='pwm'){\
+if(m==='ws2812'||m==='ws2812fill'||m==='fire'){\
+return n+'<option value=\"3\">Rainbow Wave</option><option value=\"2\">Color Cycle</option><option value=\"5\">Pixel Tracer</option><option value=\"1\">100% White</option><option value=\"4\">Breathe</option>';\
+}else if(m==='pwm'){\
 return n+'<option value=\"1\">100% Full On</option><option value=\"4\">Breathe</option>';\
 }\
 return n;\
 }\
 function calcDmxEnd(m,u,d,p){\
 if(m==='off')return'<span class=\"cell-na\" style=\"display:inline\">&mdash;</span>';\
-if(m==='pwm'||m==='fire')return'U'+u+':'+d+' <span style=\"font-size:0.72rem;color:var(--text-muted)\">(1ch)</span>';\
+if(m==='pwm')return'U'+u+':'+d+' <span style=\"font-size:0.72rem;color:var(--text-muted)\">(1ch)</span>';\
+if(m==='fire'){var end=Math.min(d+2,512);return'U'+u+':'+end+' <span style=\"font-size:0.72rem;color:var(--text-muted)\">(3ch)</span>';}\
 if(m==='ws2812fill'){var end=Math.min(d+2,512);return'U'+u+':'+end+' <span style=\"font-size:0.72rem;color:var(--text-muted)\">(3ch)</span>';}\
 if(m==='ws2812'){\
 var rem=p,curU=u,curCh=Math.min(Math.max(d,1),512);\
@@ -669,17 +673,20 @@ pill.style.opacity='1';\
 }\
 }\
 }\
-function saveOutputs(e){\
+async function saveOutputs(e){\
 if(e&&e.preventDefault)e.preventDefault();\
+var promises=[];\
 for(var c in _syncTimers){\
 clearTimeout(_syncTimers[c]);\
 var r=document.querySelector('tr[data-ch=\"'+c+'\"]');\
-if(r)syncChannel(r);\
+if(r)promises.push(syncChannel(r));\
 }\
+_syncTimers={};\
 if(_pwmTimer){\
 clearTimeout(_pwmTimer);\
+_pwmTimer=null;\
 var pInp=document.getElementById('pwm-freq-input');\
-if(pInp)syncPwmFreq(pInp.value);\
+if(pInp)promises.push(syncPwmFreq(pInp.value));\
 }\
 var pill=document.getElementById('save-pill');\
 var btn=document.getElementById('save-outputs-btn');\
@@ -689,7 +696,9 @@ pill.className='pill pill-cyan';\
 pill.innerHTML='<span class=\"pulse\" style=\"background:#38bdf8\"></span> Saving...';\
 pill.style.opacity='1';\
 }\
-fetch('/api/outputs/save',{method:'POST'}).then(function(r){\
+try{\
+if(promises.length>0)await Promise.all(promises);\
+var r=await fetch('/api/outputs/save',{method:'POST'});\
 if(r.ok){\
 markPending(false);\
 if(pill){\
@@ -699,19 +708,19 @@ pill.style.opacity='1';\
 setTimeout(function(){if(!_pending)pill.style.opacity='0';},3000);\
 }\
 }else{\
-if(pill){pill.className='pill pill-red';pill.textContent='Save Error';pill.style.opacity='1';}\
+if(pill){pill.className='pill pill-red';pill.textContent='Save Error ('+r.status+')';pill.style.opacity='1';}\
 }\
-}).catch(function(){\
-if(pill){pill.className='pill pill-red';pill.textContent='Save Error';pill.style.opacity='1';}\
-}).finally(function(){\
+}catch(err){\
+if(pill){pill.className='pill pill-red';pill.textContent='Network Error';pill.style.opacity='1';}\
+}finally{\
 if(btn){btn.disabled=false;btn.textContent='Save';}\
-});\
+}\
 return false;\
 }\
 function syncChannel(tr){\
-if(!tr)return;\
+if(!tr)return Promise.resolve();\
 var ch=tr.getAttribute('data-ch');\
-if(!ch)return;\
+if(!ch)return Promise.resolve();\
 var ms=tr.querySelector('select[name^=\"m\"]');\
 var us=tr.querySelector('input[name^=\"u\"]');\
 var ds=tr.querySelector('input[name^=\"d\"]');\
@@ -722,14 +731,14 @@ var u=us?us.value:'1';\
 var d=ds?ds.value:'1';\
 var p=ps?ps.value:'30';\
 var l=ls?ls.value:'blackout';\
-fetch('/api/channel',{\
+return fetch('/api/channel',{\
 method:'POST',\
 headers:{'Content-Type':'application/x-www-form-urlencoded'},\
 body:'ch='+encodeURIComponent(ch)+'&mode='+encodeURIComponent(m)+'&universe='+encodeURIComponent(u)+'&dmx_channel='+encodeURIComponent(d)+'&pixel_count='+encodeURIComponent(p)+'&loss='+encodeURIComponent(l)\
 }).catch(function(){});\
 }\
 function syncPwmFreq(val){\
-fetch('/api/pwm_freq',{\
+return fetch('/api/pwm_freq',{\
 method:'POST',\
 headers:{'Content-Type':'application/x-www-form-urlencoded'},\
 body:'freq='+encodeURIComponent(val)\

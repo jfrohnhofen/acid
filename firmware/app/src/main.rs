@@ -54,6 +54,7 @@ use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::peripherals::*;
 use embassy_rp::pio::Pio;
 use embassy_rp::spi::Spi;
+use embassy_rp::watchdog::Watchdog;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::once_lock::OnceLock;
 use embassy_sync::signal::Signal;
@@ -89,7 +90,7 @@ bind_interrupts!(struct Irqs {
 
 const DHCP_TIMEOUT: Duration = Duration::from_secs(15);
 const HTTP_PORT: u16 = 80;
-const HTTP_TASKS: usize = 1;
+const HTTP_TASKS: usize = 4;
 const SACN_PORT: u16 = 5568;
 
 type SpiDev = ExclusiveDevice<
@@ -103,6 +104,7 @@ type EthDevice = embassy_net_wiznet::Device<'static>;
 
 static IDENTITY: OnceLock<Identity> = OnceLock::new();
 static USING_FALLBACK: AtomicBool = AtomicBool::new(false);
+static CORE1_HEARTBEAT: AtomicBool = AtomicBool::new(false);
 static MDNS_RELOAD_SIGNAL: Signal<embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex, ()> =
     Signal::new();
 
@@ -523,10 +525,13 @@ async fn sacn_task(stack: Stack<'static>) -> ! {
                             let now = Instant::now();
                             UNIVERSE_STORE.lock(|s| {
                                 let mut store = s.borrow_mut();
-                                store.update(pkt.universe, pkt.sequence_number, pkt.dmx_data, now);
-                                if pkt.is_stream_terminated() {
-                                    store.mark_terminated(pkt.universe);
-                                }
+                                store.update(
+                                    pkt.universe,
+                                    pkt.sequence_number,
+                                    pkt.dmx_data,
+                                    pkt.is_stream_terminated(),
+                                    now,
+                                );
                             });
                         }
                     }
@@ -555,6 +560,7 @@ async fn output_task(mut driver: OutputDriver) -> ! {
 
         // Output the frame with PIO / PWM concurrently on Core 1
         driver.process_frame(&cfg, now_ms, &mut fire_sims).await;
+        CORE1_HEARTBEAT.store(true, Ordering::Relaxed);
 
         let elapsed = Instant::now().duration_since(frame_start);
         let target = Duration::from_millis(25); // 40 Hz refresh rate
@@ -570,6 +576,21 @@ async fn output_task(mut driver: OutputDriver) -> ! {
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(clocks::config());
     info!("ACID: starting Raspberry Pi Pico application");
+
+    // Initialize RP2040 hardware Watchdog
+    let mut watchdog = Watchdog::new(p.WATCHDOG);
+    if let Some(reason) = watchdog.reset_reason() {
+        match reason {
+            embassy_rp::watchdog::ResetReason::TimedOut => {
+                warn!("⚠️ System recovered from WATCHDOG TIMEOUT!");
+            }
+            embassy_rp::watchdog::ResetReason::Forced => {
+                info!("System recovered from forced reset");
+            }
+        }
+    }
+    // Pause watchdog countdown automatically when attached to a hardware debugger / probe-rs
+    watchdog.pause_on_debug(true);
 
     // 1. Flash persistence initialization & UID extraction
     let mut flash = Flash::<_, Blocking, { firmware::flash::FLASH_SIZE }>::new_blocking(p.FLASH);
@@ -642,19 +663,19 @@ async fn main(spawner: Spawner) {
         pio0.sm1,
         pio0.sm2,
         pio0.sm3,
-        p.PIN_15,
         p.PIN_14,
-        p.PIN_13,
-        p.PIN_12,
+        p.PIN_15,
+        p.PIN_10,
+        p.PIN_11,
         pio1.common,
         pio1.sm0,
         pio1.sm1,
         pio1.sm2,
         pio1.sm3,
-        p.PIN_11,
-        p.PIN_10,
-        p.PIN_9,
+        p.PIN_12,
+        p.PIN_13,
         p.PIN_8,
+        p.PIN_9,
         dma_channels,
     );
 
@@ -672,7 +693,7 @@ async fn main(spawner: Spawner) {
 
     // 2. W5500 on SPI0: GP0 (MISO), GP1 (RSTn), GP2 (SCK), GP3 (MOSI), GP4 (INTn), GP5 (CSn)
     let mut spi_config = embassy_rp::spi::Config::default();
-    spi_config.frequency = 10_000_000;
+    spi_config.frequency = 8_000_000;
     let spi = embassy_rp::spi::Spi::new(
         p.SPI0,
         p.PIN_2,
@@ -711,7 +732,7 @@ async fn main(spawner: Spawner) {
     spawner.spawn(eth_task(eth_runner).unwrap());
 
     // 3. Network stack
-    static RESOURCES: StaticCell<StackResources<6>> = StaticCell::new();
+    static RESOURCES: StaticCell<StackResources<16>> = StaticCell::new();
     let seed = u64::from_le_bytes([m[0], m[1], m[2], m[3], m[4], m[5], 0x5a, 0xc1]);
     let (stack, net_runner) = embassy_net::new(
         device,
@@ -728,9 +749,20 @@ async fn main(spawner: Spawner) {
         spawner.spawn(web_task(id, stack).unwrap());
     }
 
-    // 4. Main monitoring loop
+    // 4. Main monitoring loop & hardware watchdog
+    // Start countdown timer with 8s timeout (hardware max on RP2040 is ~8.3s)
+    watchdog.start(Duration::from_millis(8000));
+
     let mut last = NetStatus::default();
     loop {
+        // Feed watchdog only if Core 1 is actively rendering output frames
+        if CORE1_HEARTBEAT.load(Ordering::Relaxed) {
+            CORE1_HEARTBEAT.store(false, Ordering::Relaxed);
+            watchdog.feed(Duration::from_millis(8000));
+        } else {
+            warn!("Core 1 heartbeat missed! Withholding watchdog feed...");
+        }
+
         let is_fb = USING_FALLBACK.load(Ordering::Relaxed);
         let ip = stack.config_v4().map(|c| {
             let a = c.address.address().octets();

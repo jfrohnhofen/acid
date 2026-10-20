@@ -32,11 +32,11 @@ use fixed::traits::ToFixed;
 use pio::{Assembler, SideSet};
 
 use sacn_core::channel::{
-    fire_dimmer, pwm_level_from_universe, ws2812_fill_bytes, ws2812_multi_universe_bytes,
+    pwm_level_from_universe, ws2812_fill_bytes, ws2812_multi_universe_bytes,
     ChannelMode,
 };
 use sacn_core::config::AppConfig;
-use sacn_core::fire::{sparking_for_level, Fire};
+use sacn_core::fire::Fire;
 
 use crate::state::UNIVERSE_STORE;
 
@@ -45,8 +45,8 @@ pub const MAX_WIRE_BYTES: usize = 3000; // 1000 * 3 (RGB)
 pub const MAX_FIRE_PIXELS: usize = 170; // Local fire simulation limit (saves RAM)
 pub const CHANNEL_COUNT: usize = 8;
 
-pub const CHANNEL_GPIOS: [usize; CHANNEL_COUNT] = [15, 14, 13, 12, 11, 10, 9, 8];
-pub const CHANNEL_PWM_SLICES: [usize; CHANNEL_COUNT] = [7, 7, 6, 6, 5, 5, 4, 4];
+pub const CHANNEL_GPIOS: [usize; CHANNEL_COUNT] = [14, 15, 10, 11, 12, 13, 8, 9];
+pub const CHANNEL_PWM_SLICES: [usize; CHANNEL_COUNT] = [7, 7, 5, 5, 6, 6, 4, 4];
 
 static STRIP_BUFFERS: static_cell::StaticCell<[[u8; MAX_WIRE_BYTES]; CHANNEL_COUNT]> =
     static_cell::StaticCell::new();
@@ -100,20 +100,20 @@ impl OutputDriver {
         mut sm1: StateMachine<'static, PIO0, 1>,
         mut sm2: StateMachine<'static, PIO0, 2>,
         mut sm3: StateMachine<'static, PIO0, 3>,
-        pin15: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_15>,
         pin14: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_14>,
-        pin13: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_13>,
-        pin12: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_12>,
+        pin15: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_15>,
+        pin10: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_10>,
+        pin11: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_11>,
 
         mut common1: Common<'static, PIO1>,
         mut sm4: StateMachine<'static, PIO1, 0>,
         mut sm5: StateMachine<'static, PIO1, 1>,
         mut sm6: StateMachine<'static, PIO1, 2>,
         mut sm7: StateMachine<'static, PIO1, 3>,
-        pin11: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_11>,
-        pin10: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_10>,
-        pin9: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_9>,
+        pin12: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_12>,
+        pin13: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_13>,
         pin8: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_8>,
+        pin9: embassy_rp::Peri<'static, embassy_rp::peripherals::PIN_9>,
 
         dma: [Channel<'static>; CHANNEL_COUNT],
     ) -> Self {
@@ -121,27 +121,31 @@ impl OutputDriver {
         let loaded0 = common0.load_program(&prg);
         let loaded1 = common1.load_program(&prg);
 
-        // Configure PIO0 state machines for Ch 0..3 (GP15, 14, 13, 12)
-        let mut p15 = common0.make_pio_pin(pin15);
+        // De-assert reset for the RP2040 hardware PWM peripheral and wait for ready
+        pac::RESETS.reset().modify(|w| w.set_pwm(false));
+        while !pac::RESETS.reset_done().read().pwm() {}
+
+        // Configure PIO0 state machines for Ch 0..3 (GP14, 15, 10, 11)
         let mut p14 = common0.make_pio_pin(pin14);
-        let mut p13 = common0.make_pio_pin(pin13);
-        let mut p12 = common0.make_pio_pin(pin12);
+        let mut p15 = common0.make_pio_pin(pin15);
+        let mut p10 = common0.make_pio_pin(pin10);
+        let mut p11 = common0.make_pio_pin(pin11);
 
-        setup_sm(&mut sm0, &mut p15, &loaded0);
-        setup_sm(&mut sm1, &mut p14, &loaded0);
-        setup_sm(&mut sm2, &mut p13, &loaded0);
-        setup_sm(&mut sm3, &mut p12, &loaded0);
+        setup_sm(&mut sm0, &mut p14, &loaded0);
+        setup_sm(&mut sm1, &mut p15, &loaded0);
+        setup_sm(&mut sm2, &mut p10, &loaded0);
+        setup_sm(&mut sm3, &mut p11, &loaded0);
 
-        // Configure PIO1 state machines for Ch 4..7 (GP11, 10, 9, 8)
-        let mut p11 = common1.make_pio_pin(pin11);
-        let mut p10 = common1.make_pio_pin(pin10);
-        let mut p9 = common1.make_pio_pin(pin9);
+        // Configure PIO1 state machines for Ch 4..7 (GP12, 13, 8, 9)
+        let mut p12 = common1.make_pio_pin(pin12);
+        let mut p13 = common1.make_pio_pin(pin13);
         let mut p8 = common1.make_pio_pin(pin8);
+        let mut p9 = common1.make_pio_pin(pin9);
 
-        setup_sm(&mut sm4, &mut p11, &loaded1);
-        setup_sm(&mut sm5, &mut p10, &loaded1);
-        setup_sm(&mut sm6, &mut p9, &loaded1);
-        setup_sm(&mut sm7, &mut p8, &loaded1);
+        setup_sm(&mut sm4, &mut p12, &loaded1);
+        setup_sm(&mut sm5, &mut p13, &loaded1);
+        setup_sm(&mut sm6, &mut p8, &loaded1);
+        setup_sm(&mut sm7, &mut p9, &loaded1);
 
         let strips = STRIP_BUFFERS.init([[0u8; MAX_WIRE_BYTES]; CHANNEL_COUNT]);
 
@@ -201,7 +205,10 @@ impl OutputDriver {
 
             if is_pwm_mode {
                 if self.pin_is_pwm[i] != Some(true) {
-                    pac::IO_BANK0.gpio(gp).ctrl().write(|w| w.set_funcsel(4.into())); // PWM funcsel 4
+                    pac::IO_BANK0.gpio(gp).ctrl().write(|w| {
+                        w.set_funcsel(4.into()); // PWM funcsel 4
+                        w.set_oeover(3.into());  // Force Output Enable high
+                    });
                     self.pin_is_pwm[i] = Some(true);
                 }
 
@@ -211,14 +218,17 @@ impl OutputDriver {
                     render_pwm_channel(ch_cfg.mode, ch_cfg.loss, now_instant)
                 };
 
-                let compare = ((duty as u32 * self.last_pwm_top as u32 + 127) / 255) as u16;
-
-                if i % 2 == 1 {
-                    // Channel A (odd index)
-                    pac::PWM.ch(slice).cc().modify(|w| w.set_a(compare));
+                let compare = if duty == 255 {
+                    self.last_pwm_top.saturating_add(1)
                 } else {
-                    // Channel B (even index)
+                    ((duty as u32 * self.last_pwm_top as u32 + 127) / 255) as u16
+                };
+
+                let is_pwm_channel_b = (gp % 2) == 1;
+                if is_pwm_channel_b {
                     pac::PWM.ch(slice).cc().modify(|w| w.set_b(compare));
+                } else {
+                    pac::PWM.ch(slice).cc().modify(|w| w.set_a(compare));
                 }
                 strip_lens[i] = 0;
             } else {
@@ -238,7 +248,7 @@ impl OutputDriver {
                         render_pixel_channel_bytes(
                             ch_cfg.mode,
                             ch_cfg.loss,
-                            now_instant,
+                            now_ms,
                             &mut fire_sims[i],
                             &mut self.strips[i],
                         )
@@ -329,16 +339,12 @@ fn get_test_pixel_info(ch_idx: usize, mode: ChannelMode) -> usize {
     }
 }
 
-fn get_universe_data(universe: u16) -> Option<([u8; sacn_core::channel::DMX_UNIVERSE_SIZE], Option<u32>)> {
+fn get_universe_data(universe: u16) -> Option<([u8; sacn_core::channel::DMX_UNIVERSE_SIZE], Option<u32>, bool)> {
     UNIVERSE_STORE.lock(|s| {
         let store = s.borrow();
         store.get(universe).map(|(data, last, term)| {
-            let ms = if term {
-                None
-            } else {
-                last.map(|t| Instant::now().duration_since(t).as_millis() as u32)
-            };
-            (data, ms)
+            let ms = last.map(|t| Instant::now().duration_since(t).as_millis() as u32);
+            (data, ms, term)
         })
     })
 }
@@ -346,7 +352,7 @@ fn get_universe_data(universe: u16) -> Option<([u8; sacn_core::channel::DMX_UNIV
 fn render_pixel_channel_bytes(
     mode: ChannelMode,
     loss: sacn_core::loss::LossConfig,
-    _now: Instant,
+    now_ms: u64,
     fire_sim: &mut Option<Fire<MAX_FIRE_PIXELS>>,
     out: &mut [u8; MAX_WIRE_BYTES],
 ) -> usize {
@@ -359,7 +365,10 @@ fn render_pixel_channel_bytes(
             *fire_sim = None;
             let n = (pixel_count as usize).min(MAX_PIXELS);
             let uni_data = get_universe_data(universe);
-            let gain = loss.gain(uni_data.as_ref().and_then(|(_, ms)| *ms));
+            let gain = loss.gain(
+                uni_data.as_ref().and_then(|(_, ms, _)| *ms),
+                uni_data.as_ref().map(|(_, _, t)| *t).unwrap_or(false),
+            );
 
             let bytes_written = UNIVERSE_STORE.lock(|s| {
                 let store = s.borrow();
@@ -383,9 +392,12 @@ fn render_pixel_channel_bytes(
             *fire_sim = None;
             let n = (pixel_count as usize).min(MAX_PIXELS);
             let uni_data = get_universe_data(universe);
-            let gain = loss.gain(uni_data.as_ref().and_then(|(_, ms)| *ms));
-            let bytes_written = if let Some((data, _)) = uni_data {
-                ws2812_fill_bytes(&data, start_channel, n, out)
+            let gain = loss.gain(
+                uni_data.as_ref().and_then(|(_, ms, _)| *ms),
+                uni_data.as_ref().map(|(_, _, t)| *t).unwrap_or(false),
+            );
+            let bytes_written = if let Some((data, _, _)) = &uni_data {
+                ws2812_fill_bytes(data, start_channel, n, out)
             } else {
                 let total = (n * 3).min(out.len());
                 out[..total].fill(0);
@@ -399,34 +411,34 @@ fn render_pixel_channel_bytes(
             bytes_written
         }
         ChannelMode::Fire { pixel_count, control } => {
-            let n = (pixel_count as usize).min(MAX_FIRE_PIXELS);
-            let sim = fire_sim.get_or_insert_with(|| Fire::new(0xCAFE_BABE ^ (pixel_count as u32)));
+            *fire_sim = None;
+            let n = (pixel_count as usize).min(MAX_PIXELS);
 
-            let dimmer_raw = match control {
+            let ctrl = match control {
                 Some(slot) => {
                     let uni_data = get_universe_data(slot.universe);
-                    let gain = loss.gain(uni_data.as_ref().and_then(|(_, ms)| *ms));
-                    let level = fire_dimmer(Some(slot), uni_data.as_ref().map(|(d, _)| d.as_slice()));
-                    ((level as u16 * gain as u16) / 255) as u8
+                    let gain = loss.gain(
+                        uni_data.as_ref().and_then(|(_, ms, _)| *ms),
+                        uni_data.as_ref().map(|(_, _, t)| *t).unwrap_or(false),
+                    );
+                    let mut c = sacn_core::channel::fire_controls(
+                        Some(slot),
+                        uni_data.as_ref().map(|(d, _, _)| d.as_slice()),
+                    );
+                    c.dimmer = ((c.dimmer as u16 * gain as u16) / 255) as u8;
+                    c
                 }
-                None => 255,
+                None => sacn_core::channel::FireControls::default(),
             };
 
-            sim.sparking = sparking_for_level(dimmer_raw);
-            sim.step();
-
-            let mut byte_idx = 0;
-            for &cell in sim.heat()[..n].iter() {
-                let rgb = sacn_core::fire::heat_to_color(cell);
-                let scaled = if dimmer_raw < 255 { rgb.scaled(dimmer_raw) } else { rgb };
-                if byte_idx + 3 <= out.len() {
-                    out[byte_idx] = scaled.r;
-                    out[byte_idx + 1] = scaled.g;
-                    out[byte_idx + 2] = scaled.b;
-                    byte_idx += 3;
-                }
-            }
-            byte_idx
+            sacn_core::fire::render_fire_wire_bytes(
+                now_ms,
+                n,
+                ctrl.dimmer,
+                ctrl.speed,
+                ctrl.yellow_to_red,
+                out,
+            )
         }
         ChannelMode::Pwm { .. } => {
             *fire_sim = None;
@@ -443,9 +455,12 @@ fn render_pwm_channel(
     match mode {
         ChannelMode::Pwm { universe, dmx_channel } => {
             let uni_data = get_universe_data(universe);
-            let gain = loss.gain(uni_data.as_ref().and_then(|(_, ms)| *ms));
+            let gain = loss.gain(
+                uni_data.as_ref().and_then(|(_, ms, _)| *ms),
+                uni_data.as_ref().map(|(_, _, t)| *t).unwrap_or(false),
+            );
             let raw_level = uni_data
-                .map(|(d, _)| pwm_level_from_universe(&d, dmx_channel))
+                .map(|(d, _, _)| pwm_level_from_universe(&d, dmx_channel))
                 .unwrap_or(0);
             ((raw_level as u16 * gain as u16) / 255) as u8
         }
