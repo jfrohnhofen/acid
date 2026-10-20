@@ -1,0 +1,60 @@
+[package]
+name = "firmware"
+version = "1.0.0"
+edition = "2021"
+default-run = "firmware"
+
+[dependencies]
+sacn-core = { path = "../sacn-core" }
+
+embassy-rp = { version = "0.10.0", features = [
+    "rp2040",
+    "unstable-pac",
+    "defmt",
+    "time-driver",
+    "critical-section-impl",
+    "boot2-w25q080",
+] }
+embassy-executor = { version = "0.10.0", features = [
+    "platform-cortex-m",
+    "executor-thread",
+] }
+embassy-time = "0.5.1"
+embassy-futures = "0.1.2"
+embassy-net = { version = "0.9.1", features = [
+    "proto-ipv4",
+    "medium-ethernet",
+    "udp",
+    "tcp",
+    "dhcpv4",
+    "dhcpv4-hostname",
+    "multicast",
+    "icmp",
+    "auto-icmp-echo-reply",
+] }
+embassy-net-wiznet = "0.3.0"
+embassy-sync = "0.8.0"
+
+cortex-m = { version = "0.7", features = ["inline-asm"] }
+cortex-m-rt = "0.7"
+fixed = "1.31"
+pio = "0.3"
+pio-proc = "0.3"
+portable-atomic = { version = "1.15.0", features = ["critical-section"] }
+defmt = "0.3"
+defmt-rtt = "0.4"
+panic-probe = { version = "0.3", features = ["print-defmt"] }
+
+static_cell = "2.1.1"
+embedded-hal-bus = { version = "0.2", features = ["async"] }
+embedded-hal-async = "1.0"
+embedded-io-async = "0.6"
+heapless = { version = "0.8", features = ["serde"] }
+
+picoserve = { version = "0.20.1", features = ["embassy"] }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+
+edge-mdns = "0.8.0"
+edge-nal = "0.7.0"
+edge-nal-embassy = { version = "0.9.0", features = ["multicast"] }
+rand_core = { version = "0.10", default-features = false }

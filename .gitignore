@@ -1,4 +1,5 @@
 .direnv/
 .history/
 build/
+target/
 *.kicad_prl

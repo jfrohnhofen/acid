@@ -1,0 +1,12 @@
+[target.thumbv6m-none-eabi]
+runner = "probe-rs run --chip RP2040 --protocol swd"
+
+[alias]
+fw-build = "build -p firmware --release --target thumbv6m-none-eabi --bin firmware"
+fw-run = "run -p firmware --release --target thumbv6m-none-eabi --bin firmware"
+fw-check = "check -p firmware --target thumbv6m-none-eabi --bin firmware"
+web-preview = "run -p sacn-core --example web_preview"
+
+[env]
+DEFMT_LOG = "warn"
+SMOLTCP_IFACE_MAX_MULTICAST_GROUP_COUNT = "16"

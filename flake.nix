@@ -1,16 +1,21 @@
 {
-  description = "ACID electronics design environment (KiCad/atopile)";
+  description = "ACID electronics design & firmware environment (Pico + KiCad/atopile)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, rust-overlay }:
     let
       supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
       forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
         pkgs = import nixpkgs {
           inherit system;
+          overlays = [ (import rust-overlay) ];
           config.allowUnfree = true;
         };
       });
@@ -150,10 +155,43 @@ open(path3, "w").write(content3)
               echo "   • KiCad:   $(kicad-cli version 2>/dev/null || echo 'not found')"
             '';
           };
+
+          rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+            extensions = [ "rust-src" "llvm-tools-preview" ];
+            targets = [ "thumbv6m-none-eabi" ];
+          };
+
+          firmwareShell = pkgs.mkShell {
+            name = "acid-firmware-shell";
+
+            packages = with pkgs; [
+              rustToolchain
+              probe-rs-tools
+              cargo-binutils
+              cargo-watch
+              cargo-expand
+              pkg-config
+              python3
+              socat
+              tio
+            ] ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+              libudev-zero
+            ];
+
+            shellHook = ''
+              echo "⚡ ACID Raspberry Pi Pico firmware dev shell"
+              echo "  cargo check -p sacn-core            # host-side lib + tests"
+              echo "  cargo test  -p sacn-core"
+              echo "  cargo fw-check                      # embedded check (RP2040)"
+              echo "  cargo fw-build                      # embedded target release"
+              echo "  cargo fw-run                        # flash+run via probe-rs"
+            '';
+          };
         in
         {
           default = pcbShell;
           pcb = pcbShell;
+          firmware = firmwareShell;
         });
     };
 }
