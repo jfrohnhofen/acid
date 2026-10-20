@@ -1,0 +1,35 @@
+name: PCB Build & Validation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'pcb/**'
+      - 'flake.nix'
+      - 'flake.lock'
+      - '.github/workflows/pcb.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'pcb/**'
+      - 'flake.nix'
+      - 'flake.lock'
+      - '.github/workflows/pcb.yml'
+
+jobs:
+  build-frozen:
+    name: Build PCB (frozen check)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Set up Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Run atopile frozen build
+        run: |
+          nix develop .#pcb --command bash -c "cd pcb && ato build --frozen"

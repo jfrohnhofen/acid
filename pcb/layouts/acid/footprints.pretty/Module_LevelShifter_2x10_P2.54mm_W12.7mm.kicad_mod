@@ -1,0 +1,90 @@
+(footprint "Module_LevelShifter_2x10_P2.54mm_W12.7mm"
+	(version 20240108)
+	(generator "kicad-footprint-generator")
+	(layer "F.Cu")
+	(descr "Level Shifter 8-Channel Module (TXS0108E / TXB0108): 2x10 DIP pins, 2.54mm pitch along row, 12.7mm (0.5 inch) row spacing. Standard DIP-20 counter-clockwise pinout with opposing A/B channels")
+	(tags "Level Shifter Module 2x10 DIP-20 2.54mm 12.7mm 0.5in TXS0108E TXB0108")
+	(property "Reference" "REF**"
+		(at 6.35 -3.5 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "LevelShifter_2x10"
+		(at 6.35 26.5 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr through_hole)
+
+	# Module Outline (15.7 x 26.86 mm)
+	(fp_line (start -1.5 -2.0) (end 14.2 -2.0) (stroke (width 0.15) (type solid)) (layer "F.SilkS"))
+	(fp_line (start 14.2 -2.0) (end 14.2 24.86) (stroke (width 0.15) (type solid)) (layer "F.SilkS"))
+	(fp_line (start 14.2 24.86) (end -1.5 24.86) (stroke (width 0.15) (type solid)) (layer "F.SilkS"))
+	(fp_line (start -1.5 24.86) (end -1.5 -2.0) (stroke (width 0.15) (type solid)) (layer "F.SilkS"))
+
+	# Pin 1 marker
+	(fp_circle (center -2.2 0) (end -2.0 0) (stroke (width 0.3) (type solid)) (fill no) (layer "F.SilkS"))
+
+	# Labels
+	(fp_text user "3V3 (VA)" (at 1.8 0 0) (layer "F.Fab")
+		(effects (font (size 0.8 0.8) (thickness 0.12)) (justify left)))
+	(fp_text user "5V (VB)" (at 10.9 0 0) (layer "F.Fab")
+		(effects (font (size 0.8 0.8) (thickness 0.12)) (justify right)))
+	(fp_text user "OE" (at 1.8 22.86 0) (layer "F.Fab")
+		(effects (font (size 0.8 0.8) (thickness 0.12)) (justify left)))
+	(fp_text user "GND" (at 10.9 22.86 0) (layer "F.Fab")
+		(effects (font (size 0.8 0.8) (thickness 0.12)) (justify right)))
+
+	(fp_text user "3.3V SIDE (A)" (at 3.0 11.43 90) (layer "F.Fab")
+		(effects (font (size 0.8 0.8) (thickness 0.12))))
+	(fp_text user "5V SIDE (B)" (at 9.7 11.43 90) (layer "F.Fab")
+		(effects (font (size 0.8 0.8) (thickness 0.12))))
+
+	# Fab outline
+	(fp_line (start -1.5 -2.0) (end 14.2 -2.0) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+	(fp_line (start 14.2 -2.0) (end 14.2 24.86) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+	(fp_line (start 14.2 24.86) (end -1.5 24.86) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+	(fp_line (start -1.5 24.86) (end -1.5 -2.0) (stroke (width 0.1) (type solid)) (layer "F.Fab"))
+
+	# Courtyard - Row 1 (Pins 1-10)
+	(fp_line (start -1.5 -2.5) (end 1.5 -2.5) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+	(fp_line (start 1.5 -2.5) (end 1.5 25.36) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+	(fp_line (start 1.5 25.36) (end -1.5 25.36) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+	(fp_line (start -1.5 25.36) (end -1.5 -2.5) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+
+	# Courtyard - Row 2 (Pins 11-20)
+	(fp_line (start 11.2 -2.5) (end 14.2 -2.5) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+	(fp_line (start 14.2 -2.5) (end 14.2 25.36) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+	(fp_line (start 14.2 25.36) (end 11.2 25.36) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+	(fp_line (start 11.2 25.36) (end 11.2 -2.5) (stroke (width 0.05) (type solid)) (layer "F.CrtYd"))
+	(pad "1" thru_hole rect (at 0 0.00) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "2" thru_hole circle (at 0 2.54) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "3" thru_hole circle (at 0 5.08) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "4" thru_hole circle (at 0 7.62) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "5" thru_hole circle (at 0 10.16) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "6" thru_hole circle (at 0 12.70) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "7" thru_hole circle (at 0 15.24) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "8" thru_hole circle (at 0 17.78) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "9" thru_hole circle (at 0 20.32) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "10" thru_hole circle (at 0 22.86) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "11" thru_hole circle (at 12.7 22.86) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "12" thru_hole circle (at 12.7 20.32) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "13" thru_hole circle (at 12.7 17.78) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "14" thru_hole circle (at 12.7 15.24) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "15" thru_hole circle (at 12.7 12.70) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "16" thru_hole circle (at 12.7 10.16) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "17" thru_hole circle (at 12.7 7.62) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "18" thru_hole circle (at 12.7 5.08) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "19" thru_hole circle (at 12.7 2.54) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+	(pad "20" thru_hole circle (at 12.7 0.00) (size 1.7 1.7) (drill 1) (layers "*.Cu" "*.Mask") (remove_unused_layers no))
+)

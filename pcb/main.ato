@@ -1,0 +1,532 @@
+"""
+ACID PCB Design v0.1
+Raspberry Pi Pico with W5500 Ethernet SPI module, USB-C breakout,
+and 90-degree IDC headers for WS2812B PIO chains.
+"""
+
+import SPI, ElectricPower, ElectricLogic
+
+component RaspberryPiPico:
+    """
+    Raspberry Pi Pico microcontroller board (RP2040).
+    Using standard 40-pin 2.54mm dual header / socket footprint.
+    """
+    footprint = "Module:RaspberryPi_Pico_Common_THT"
+
+    # Physical pin definitions
+    pin 1   # GP0
+    pin 2   # GP1
+    pin 3   # GND
+    pin 4   # GP2
+    pin 5   # GP3
+    pin 6   # GP4
+    pin 7   # GP5
+    pin 8   # GND
+    pin 9   # GP6
+    pin 10  # GP7
+    pin 11  # GP8
+    pin 12  # GP9
+    pin 13  # GND
+    pin 14  # GP10
+    pin 15  # GP11
+    pin 16  # GP12
+    pin 17  # GP13
+    pin 18  # GND
+    pin 19  # GP14
+    pin 20  # GP15
+    pin 21  # GP16 / SPI0_RX (MISO)
+    pin 22  # GP17 / SPI0_CSn
+    pin 23  # GND
+    pin 24  # GP18 / SPI0_SCK
+    pin 25  # GP19 / SPI0_TX (MOSI)
+    pin 26  # GP20 / W5500_RST
+    pin 27  # GP21 / W5500_INT
+    pin 28  # GND
+    pin 29  # GP22
+    pin 30  # RUN
+    pin 31  # GP26 (ADC0)
+    pin 32  # GP27 (ADC1)
+    pin 33  # GND
+    pin 34  # GP28 (ADC2)
+    pin 35  # ADC_VREF
+    pin 36  # 3V3_OUT
+    pin 37  # 3V3_EN
+    pin 38  # GND
+    pin 39  # VSYS (Power Input: 1.8V - 5.5V)
+    pin 40  # VBUS (USB 5V supply)
+
+    # Signals for PIO WS2812B channels (16 consecutive GPIOs: GP0 to GP15)
+    signal gp0 ~ pin 1
+    signal gp1 ~ pin 2
+    signal gp2 ~ pin 4
+    signal gp3 ~ pin 5
+    signal gp4 ~ pin 6
+    signal gp5 ~ pin 7
+    signal gp6 ~ pin 9
+    signal gp7 ~ pin 10
+    signal gp8 ~ pin 11
+    signal gp9 ~ pin 12
+    signal gp10 ~ pin 14
+    signal gp11 ~ pin 15
+    signal gp12 ~ pin 16
+    signal gp13 ~ pin 17
+    signal gp14 ~ pin 19
+    signal gp15 ~ pin 20
+    signal run ~ pin 30
+
+    # Power interfaces
+    power_vsys = new ElectricPower
+    power_3v3 = new ElectricPower
+
+    # SPI and control interfaces
+    spi0 = new SPI
+    spi0_cs = new ElectricLogic
+    w5500_rst = new ElectricLogic
+    w5500_irq = new ElectricLogic
+
+    # Power connections
+    power_vsys.hv ~ pin 39
+    power_vsys.lv ~ pin 38
+    power_3v3.hv ~ pin 36
+    power_3v3.lv ~ pin 38
+
+    # Common ground bus across Pico ground pins
+    pin 3 ~ pin 38
+    pin 8 ~ pin 38
+    pin 13 ~ pin 38
+    pin 18 ~ pin 38
+    pin 23 ~ pin 38
+    pin 28 ~ pin 38
+    pin 33 ~ pin 38
+
+    # SPI0 pin mappings: GP0 (MISO), GP2 (SCK), GP3 (MOSI), GP5 (CSn)
+    spi0.miso.line ~ pin 1   # GP0 (SPI0 RX / MISO)
+    spi0_cs.line ~ pin 7     # GP5 (SPI0 CSn)
+    spi0.sclk.line ~ pin 4   # GP2 (SPI0 SCK)
+    spi0.mosi.line ~ pin 5   # GP3 (SPI0 TX / MOSI)
+
+    # Dedicated GPIO control lines for W5500: GP4 (INTn / IRQ), GP1 (RSTn)
+    w5500_irq.line ~ pin 6   # GP4 (INTn / IRQ)
+    w5500_rst.line ~ pin 2   # GP1 (RSTn)
+
+    # Logic voltage references (3.3V)
+    spi0.sclk.reference ~ power_3v3
+    spi0.mosi.reference ~ power_3v3
+    spi0.miso.reference ~ power_3v3
+    spi0_cs.reference ~ power_3v3
+    w5500_rst.reference ~ power_3v3
+    w5500_irq.reference ~ power_3v3
+
+
+component W5500Module:
+    """
+    W5500 Ethernet SPI module (compact 2x6 pins, 0.8" / 20.32mm row spacing).
+    23x25mm PCB with pins vertically centered.
+    """
+    footprint = "project_footprints:W5500_Module_2x06_P2.54mm_W20.32mm"
+
+    # Left Row (Pins 1-6)
+    pin 1   # GND
+    pin 2   # GND
+    pin 3   # MOSI
+    pin 4   # SCLK
+    pin 5   # CSn
+    pin 6   # INTn (IRQ)
+
+    # Right Row (Pins 7-12)
+    pin 7   # GND
+    pin 8   # 3V3
+    pin 9   # 3V3
+    pin 10  # NC
+    pin 11  # RSTn
+    pin 12  # MISO
+
+    power = new ElectricPower
+    spi = new SPI
+    cs = new ElectricLogic
+    rst = new ElectricLogic
+    irq = new ElectricLogic
+
+    # Power connections
+    power.hv ~ pin 8
+    pin 8 ~ pin 9
+    power.lv ~ pin 1
+    pin 1 ~ pin 2
+    pin 1 ~ pin 7
+
+    # SPI and control signals
+    spi.mosi.line ~ pin 3
+    spi.sclk.line ~ pin 4
+    cs.line ~ pin 5
+    irq.line ~ pin 6
+    rst.line ~ pin 11
+    spi.miso.line ~ pin 12
+
+    # Logic voltage references
+    spi.sclk.reference ~ power
+    spi.mosi.reference ~ power
+    spi.miso.reference ~ power
+    cs.reference ~ power
+    rst.reference ~ power
+    irq.reference ~ power
+
+
+component USBCBreakout:
+    """
+    USB Type-C power/data breakout board:
+    20x14mm PCB, 1x08 pins at 2.54mm pitch (2.2mm from bottom edge),
+    USB-C connector centered at top edge, proud 0.5mm.
+    Pinout: 1: CC2, 2: SBU1, 3: D+, 4: D-, 5: CC1, 6: SBU2, 7: VBUS, 8: GND
+    """
+    footprint = "project_footprints:USBC_Breakout_8Pin_20x14mm"
+
+    pin 1  # CC2
+    pin 2  # SBU1
+    pin 3  # D+
+    pin 4  # D-
+    pin 5  # CC1
+    pin 6  # SBU2
+    pin 7  # VBUS (5V)
+    pin 8  # GND
+
+    power = new ElectricPower
+    power.hv ~ pin 7
+    power.lv ~ pin 8
+
+
+component IDC_6Pin:
+    """
+    90-degree / Right-angle 6-pin IDC male shrouded box header (2x03, 2.54mm pitch).
+    Pinout: GPIO, GND, 5V, GPIO, GND, 5V
+    """
+    footprint = "Connector_IDC:IDC-Header_2x03_P2.54mm_Horizontal"
+    pin 1  # GPIO A
+    pin 2  # GND
+    pin 3  # 5V
+    pin 4  # GPIO B
+    pin 5  # GND
+    pin 6  # 5V
+
+    signal gpio_a ~ pin 1
+    signal gnd_1 ~ pin 2
+    signal pwr_1 ~ pin 3
+    signal gpio_b ~ pin 4
+    signal gnd_2 ~ pin 5
+    signal pwr_2 ~ pin 6
+
+
+component IDC_10Pin:
+    """
+    90-degree / Right-angle 10-pin IDC male shrouded box header (2x05, 2.54mm pitch).
+    Pinout: GND on even pins, GPIO on odd pins (except pin 9 = 5V).
+    """
+    footprint = "Connector_IDC:IDC-Header_2x05_P2.54mm_Horizontal"
+    pin 1   # GPIO 1 (odd)
+    pin 2   # GND (even)
+    pin 3   # GPIO 2 (odd)
+    pin 4   # GND (even)
+    pin 5   # GPIO 3 (odd)
+    pin 6   # GND (even)
+    pin 7   # GPIO 4 (odd)
+    pin 8   # GND (even)
+    pin 9   # 5V (odd exception!)
+    pin 10  # GND (even)
+
+    signal gpio_1 ~ pin 1
+    signal gnd_1 ~ pin 2
+    signal gpio_2 ~ pin 3
+    signal gnd_2 ~ pin 4
+    signal gpio_3 ~ pin 5
+    signal gnd_3 ~ pin 6
+    signal gpio_4 ~ pin 7
+    signal gnd_4 ~ pin 8
+    signal pwr_5v ~ pin 9
+    signal gnd_5 ~ pin 10
+
+
+component IDC_12Pin:
+    """90-degree / Right-angle 12-pin (2x6) IDC male shrouded box header (2x06, 2.54mm pitch)"""
+    footprint = "Connector_IDC:IDC-Header_2x06_P2.54mm_Horizontal"
+    pin 1
+    pin 2
+    pin 3
+    pin 4
+    pin 5
+    pin 6
+    pin 7
+    pin 8
+    pin 9
+    pin 10
+    pin 11
+    pin 12
+
+
+component IDC_16Pin:
+    """
+    90-degree / Right-angle 16-pin IDC male shrouded box header (2x08, 2.54mm pitch).
+    Pinout: GND on even pins, GPIO on odd pins.
+    """
+    footprint = "Connector_IDC:IDC-Header_2x08_P2.54mm_Horizontal"
+    pin 1   # GPIO 1 (odd)
+    pin 2   # GND (even)
+    pin 3   # GPIO 2 (odd)
+    pin 4   # GND (even)
+    pin 5   # GPIO 3 (odd)
+    pin 6   # GND (even)
+    pin 7   # GPIO 4 (odd)
+    pin 8   # GND (even)
+    pin 9   # GPIO 5 (odd)
+    pin 10  # GND (even)
+    pin 11  # GPIO 6 (odd)
+    pin 12  # GND (even)
+    pin 13  # GPIO 7 (odd)
+    pin 14  # GND (even)
+    pin 15  # GPIO 8 (odd)
+    pin 16  # GND (even)
+
+    signal gpio_1 ~ pin 1
+    signal gnd_1 ~ pin 2
+    signal gpio_2 ~ pin 3
+    signal gnd_2 ~ pin 4
+    signal gpio_3 ~ pin 5
+    signal gnd_3 ~ pin 6
+    signal gpio_4 ~ pin 7
+    signal gnd_4 ~ pin 8
+    signal gpio_5 ~ pin 9
+    signal gnd_5 ~ pin 10
+    signal gpio_6 ~ pin 11
+    signal gnd_6 ~ pin 12
+    signal gpio_7 ~ pin 13
+    signal gnd_7 ~ pin 14
+    signal gpio_8 ~ pin 15
+    signal gnd_8 ~ pin 16
+
+
+component LevelShifterModule:
+    """
+    8-channel Level Shifter Module (TXS0108E / TXB0108 / 74HCT245 breakout).
+    2x10 pins, 2.54mm pitch along row, 0.5 inch (12.7mm) row spacing.
+    Standard DIP-20 counter-clockwise pinout:
+    - Left side: 3.3V reference (VCCA), A1-A8 inputs, GND
+    - Right side: GND/OE, B8-B1 outputs, 5V reference (VCCB)
+    """
+    footprint = "project_footprints:Module_LevelShifter_2x10_P2.54mm_W12.7mm"
+
+    pin 1   # VCCA (3.3V)
+    pin 2   # A1
+    pin 3   # A2
+    pin 4   # A3
+    pin 5   # A4
+    pin 6   # A5
+    pin 7   # A6
+    pin 8   # A7
+    pin 9   # A8
+    pin 10  # OE
+    pin 11  # GND
+    pin 12  # B8
+    pin 13  # B7
+    pin 14  # B6
+    pin 15  # B5
+    pin 16  # B4
+    pin 17  # B3
+    pin 18  # B2
+    pin 19  # B1
+    pin 20  # VCCB (5V)
+
+    signal vcca ~ pin 1
+    signal a1 ~ pin 2
+    signal a2 ~ pin 3
+    signal a3 ~ pin 4
+    signal a4 ~ pin 5
+    signal a5 ~ pin 6
+    signal a6 ~ pin 7
+    signal a7 ~ pin 8
+    signal a8 ~ pin 9
+    signal oe ~ pin 10
+    signal gnd ~ pin 11
+    signal b8 ~ pin 12
+    signal b7 ~ pin 13
+    signal b6 ~ pin 14
+    signal b5 ~ pin 15
+    signal b4 ~ pin 16
+    signal b3 ~ pin 17
+    signal b2 ~ pin 18
+    signal b1 ~ pin 19
+    signal vccb ~ pin 20
+
+
+component SolderJumper:
+    """
+    2-pad surface-mount solder jumper (open by default).
+    Allows bridging level shifter input and output with solder if the module is omitted.
+    """
+    footprint = "project_footprints:SolderJumper-2_P1.27mm_Open_Pad1.0x1.5mm"
+    pin 1
+    pin 2
+
+    signal p1 ~ pin 1
+    signal p2 ~ pin 2
+
+
+component DebugHeader:
+    """
+    3-pin 2.54mm through-hole header for debug probe (e.g. Picoprobe / CMSIS-DAP).
+    Pinout:
+    Pin 1: RST (Pico RUN / Pin 30)
+    Pin 2: 3V3 (Pico 3V3_OUT / Pin 36)
+    Pin 3: GND (System Ground / Pin 38)
+    """
+    footprint = "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+
+    pin 1  # RST
+    pin 2  # 3V3
+    pin 3  # GND
+
+    signal rst ~ pin 1
+    signal power_3v3 ~ pin 2
+    signal gnd ~ pin 3
+
+
+component MountingHole_M2_Plated:
+    footprint = "MountingHole:MountingHole_2.2mm_M2_Pad"
+    pin 1
+
+
+module Board:
+    """
+    Top-level application board combining:
+    - Raspberry Pi Pico (RP2040)
+    - W5500 Ethernet SPI Module (2x6, 0.8" spacing, 23x25mm PCB)
+    - USB-C Breakout (8-pin, 20x14mm PCB, proud 0.5mm)
+    - 90-degree IDC Male Headers for WS2812B PIO chains (2x 6-pin, 1x 10-pin)
+    - 2x10 8-Channel Level Shifter Module (with 8 bypass solder jumpers)
+    """
+    pico = new RaspberryPiPico
+    ethernet = new W5500Module
+    usbc = new USBCBreakout
+    debug_header = new DebugHeader
+
+    # 90-degree IDC male headers (8 outputs total)
+    idc_6pin_1 = new IDC_6Pin
+    idc_6pin_2 = new IDC_6Pin
+    idc_10pin = new IDC_10Pin
+
+    # 8-Channel Level Shifter Module
+    level_shifter = new LevelShifterModule
+
+    # 8 Bypass Solder Jumpers (bridge with solder if level shifter is omitted)
+    sj_1 = new SolderJumper
+    sj_2 = new SolderJumper
+    sj_3 = new SolderJumper
+    sj_4 = new SolderJumper
+    sj_5 = new SolderJumper
+    sj_6 = new SolderJumper
+    sj_7 = new SolderJumper
+    sj_8 = new SolderJumper
+
+    # Mounting holes
+    hole_nw = new MountingHole_M2_Plated
+    hole_ne = new MountingHole_M2_Plated
+    hole_sw = new MountingHole_M2_Plated
+
+    # Power architecture:
+    # 5V VBUS from USB-C breakout supplies Pico VSYS and Level Shifter VCCB (5V)
+    usbc.power ~ pico.power_vsys
+    usbc.power.hv ~ level_shifter.vccb
+    usbc.power.lv ~ level_shifter.gnd
+
+    # Regulated 3.3V from Pico supplies W5500 Ethernet module and Level Shifter VCCA
+    pico.power_3v3 ~ ethernet.power
+    pico.power_3v3.hv ~ level_shifter.vcca
+    pico.power_3v3.hv ~ level_shifter.oe  # Output Enable pulled high to 3.3V
+
+    # SPI bus connection: Pico SPI0 <-> W5500 SPI
+    pico.spi0 ~ ethernet.spi
+    pico.spi0_cs ~ ethernet.cs
+
+    # Hardware control lines: Reset and Interrupt
+    pico.w5500_rst ~ ethernet.rst
+    pico.w5500_irq ~ ethernet.irq
+
+    # =========================================================================
+    # IDC Power & Ground Connections
+    # =========================================================================
+    # 5V distribution to headers (dedicated 5V on 6-pin headers and pin 9 of 10-pin)
+    usbc.power.hv ~ idc_6pin_1.pwr_1
+    usbc.power.hv ~ idc_6pin_1.pwr_2
+    usbc.power.hv ~ idc_6pin_2.pwr_1
+    usbc.power.hv ~ idc_6pin_2.pwr_2
+    usbc.power.hv ~ idc_10pin.pwr_5v
+
+    # Common ground distribution (dedicated GND for every output)
+    usbc.power.lv ~ idc_6pin_1.gnd_1
+    usbc.power.lv ~ idc_6pin_1.gnd_2
+    usbc.power.lv ~ idc_6pin_2.gnd_1
+    usbc.power.lv ~ idc_6pin_2.gnd_2
+
+    usbc.power.lv ~ idc_10pin.gnd_1
+    usbc.power.lv ~ idc_10pin.gnd_2
+    usbc.power.lv ~ idc_10pin.gnd_3
+    usbc.power.lv ~ idc_10pin.gnd_4
+    usbc.power.lv ~ idc_10pin.gnd_5
+
+    # =========================================================================
+    # 8 WS2812B Output Channels through Level Shifter (with Solder Bypass Jumpers)
+    # Pico GP8-GP15 (3.3V) -> Shifter Input (A) & Jumper (Pad 1)
+    # Shifter Output (B) & Jumper (Pad 2) -> Connector Pin
+    # Perfectly ordered West-to-East: 0 wire crossings!
+    # =========================================================================
+    # Channel 1: GP15 -> Shifter A1 / SJ1 -> Shifter B1 -> idc_6pin_1.gpio_b
+    pico.gp15 ~ level_shifter.a1
+    pico.gp15 ~ sj_1.p1
+    level_shifter.b1 ~ idc_6pin_1.gpio_b
+    sj_1.p2 ~ idc_6pin_1.gpio_b
+
+    # Channel 2: GP14 -> Shifter A2 / SJ2 -> Shifter B2 -> idc_6pin_1.gpio_a
+    pico.gp14 ~ level_shifter.a2
+    pico.gp14 ~ sj_2.p1
+    level_shifter.b2 ~ idc_6pin_1.gpio_a
+    sj_2.p2 ~ idc_6pin_1.gpio_a
+
+    # Channel 3: GP13 -> Shifter A3 / SJ3 -> Shifter B3 -> idc_10pin_2.gpio_4
+    pico.gp13 ~ level_shifter.a3
+    pico.gp13 ~ sj_3.p1
+    level_shifter.b3 ~ idc_10pin.gpio_4
+    sj_3.p2 ~ idc_10pin.gpio_4
+
+    # Channel 4: GP12 -> Shifter A4 / SJ4 -> Shifter B4 -> idc_10pin_2.gpio_3
+    pico.gp12 ~ level_shifter.a4
+    pico.gp12 ~ sj_4.p1
+    level_shifter.b4 ~ idc_10pin.gpio_3
+    sj_4.p2 ~ idc_10pin.gpio_3
+
+    # Channel 5: GP11 -> Shifter A5 / SJ5 -> Shifter B5 -> idc_10pin.gpio_2
+    pico.gp11 ~ level_shifter.a5
+    pico.gp11 ~ sj_5.p1
+    level_shifter.b5 ~ idc_10pin.gpio_2
+    sj_5.p2 ~ idc_10pin.gpio_2
+
+    # Channel 6: GP10 -> Shifter A6 / SJ6 -> Shifter B6 -> idc_10pin.gpio_1
+    pico.gp10 ~ level_shifter.a6
+    pico.gp10 ~ sj_6.p1
+    level_shifter.b6 ~ idc_10pin.gpio_1
+    sj_6.p2 ~ idc_10pin.gpio_1
+
+    # Channel 7: GP9 -> Shifter A7 / SJ7 -> Shifter B7 -> idc_6pin_2.gpio_b
+    pico.gp9 ~ level_shifter.a7
+    pico.gp9 ~ sj_7.p1
+    level_shifter.b7 ~ idc_6pin_2.gpio_b
+    sj_7.p2 ~ idc_6pin_2.gpio_b
+
+    # Channel 8: GP8 -> Shifter A8 / SJ8 -> Shifter B8 -> idc_6pin_2.gpio_a
+    pico.gp8 ~ level_shifter.a8
+    pico.gp8 ~ sj_8.p1
+    level_shifter.b8 ~ idc_6pin_2.gpio_a
+    sj_8.p2 ~ idc_6pin_2.gpio_a
+
+    # =========================================================================
+    # Debug Probe Header (3-pin: RST, 3V3, GND)
+    # =========================================================================
+    pico.run ~ debug_header.rst
+    pico.power_3v3.hv ~ debug_header.power_3v3
+    pico.power_3v3.lv ~ debug_header.gnd

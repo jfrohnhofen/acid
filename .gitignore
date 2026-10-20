@@ -1,0 +1,4 @@
+.direnv/
+.history/
+build/
+*.kicad_prl

@@ -1,0 +1,12 @@
+requires-atopile: "0.12.5"
+
+paths:
+  src: ./
+  layout: ./layouts
+
+builds:
+  acid:
+    entry: main.ato:Board
+    targets:
+      - default
+      - mfg-data
