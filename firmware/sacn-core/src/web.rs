@@ -48,7 +48,8 @@ pub struct PageData<'a> {
 
 pub const HEAD_AND_STYLES: &str = "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-<title>acid &bull; sACN Controller</title><style>\
+<title>acid &bull; sACN Controller</title>\
+<link rel=\"icon\" href=\"data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>\"><style>\
 :root{color-scheme:dark;\
 --bg:#090d16;--surface:#111827;--surface-card:#162032;--surface-hdr:#1a273e;\
 --border:#26354a;--border-light:#334460;--text:#f1f5f9;--text-muted:#94a3b8;\
@@ -851,7 +852,10 @@ if(t._c)t._c();\
 document.addEventListener('click',function(){\
 document.querySelectorAll('.c-select.open').forEach(function(c){c.classList.remove('open');});\
 });\
+var _polling=false;\
 function pollStatus(){\
+if(_polling)return;\
+_polling=true;\
 fetch('/api/status').then(function(r){return r.json();}).then(function(d){\
 var up=document.getElementById('stat-uptime-val');\
 if(up&&typeof d.uptime==='number'){\
@@ -872,7 +876,7 @@ h+='<tr><td><strong>Universe '+u.universe+'</strong></td><td>'+u.sequence+'</td>
 tb.innerHTML=h;\
 }\
 }\
-}).catch(function(){});\
+}).catch(function(){}).finally(function(){_polling=false;});\
 }\
 setInterval(pollStatus,1500);\
 document.querySelectorAll('select').forEach(initCustomSelect);\

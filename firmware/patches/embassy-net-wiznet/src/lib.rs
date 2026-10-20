@@ -93,6 +93,8 @@ impl<'d, C: Chip, SPI: SpiDevice, INT: Wait, RST: OutputPin> Runner<'d, C, SPI, 
                             consecutive_down = 0;
                             if !link_up {
                                 link_up = true;
+                                #[cfg(feature = "defmt")]
+                                defmt::info!("W5500: physical link UP");
                                 state_chan.set_link_state(LinkState::Up);
                             }
                         }
@@ -101,6 +103,8 @@ impl<'d, C: Chip, SPI: SpiDevice, INT: Wait, RST: OutputPin> Runner<'d, C, SPI, 
                             // Debounce link drop: require 3 consecutive false reads (1.5s) to prevent transient SPI drops
                             if consecutive_down >= 3 && link_up {
                                 link_up = false;
+                                #[cfg(feature = "defmt")]
+                                defmt::warn!("W5500: physical link DOWN");
                                 state_chan.set_link_state(LinkState::Down);
                             }
                         }

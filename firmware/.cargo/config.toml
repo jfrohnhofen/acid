@@ -8,5 +8,5 @@ fw-check = "check -p firmware --target thumbv6m-none-eabi --bin firmware"
 web-preview = "run -p sacn-core --example web_preview"
 
 [env]
-DEFMT_LOG = "warn"
+DEFMT_LOG = "info"
 SMOLTCP_IFACE_MAX_MULTICAST_GROUP_COUNT = "16"

@@ -139,6 +139,7 @@ impl Chunks for StatusPage {
 }
 
 pub async fn get_status() -> ChunkedResponse<StatusPage> {
+    defmt::info!("HTTP: GET / (Status Page)");
     ChunkedResponse::new(StatusPage)
 }
 
@@ -360,6 +361,7 @@ pub async fn post_network(
         *cfg
     };
 
+    defmt::info!("HTTP: POST /network -> host {} dhcp {}", cfg_to_save.hostname.as_str(), cfg_to_save.net.dhcp);
     let _ = crate::flash::save_config(&cfg_to_save).await;
 
     if net_changed {
@@ -378,6 +380,7 @@ pub async fn post_pwm_freq(
     picoserve::extract::Form(form): picoserve::extract::Form<PwmFreqForm>,
 ) -> impl IntoResponse {
     let freq = if form.freq > 0 { form.freq } else { form.pwm_freq };
+    defmt::info!("HTTP: POST /api/pwm_freq -> {} Hz", freq);
     if freq >= sacn_core::channel::MIN_PWM_FREQ_HZ && freq <= sacn_core::channel::MAX_PWM_FREQ_HZ {
         let mut cfg = APP_CONFIG.lock().await;
         cfg.pwm_freq_hz = freq;
@@ -405,6 +408,15 @@ pub async fn post_channel(
 ) -> impl IntoResponse {
     if form.ch >= 1 && form.ch <= CHANNEL_COUNT {
         let ch_idx = form.ch - 1;
+        defmt::info!(
+            "HTTP: POST /api/channel -> ch {} mode {} uni {} dmx {} px {} loss {}",
+            form.ch,
+            form.mode.as_str(),
+            form.universe,
+            form.dmx_channel,
+            form.pixel_count,
+            form.loss.as_str()
+        );
         let mut cfg = APP_CONFIG.lock().await;
         let (mode, loss) = parse_channel(
             form.mode.as_str(),
@@ -420,17 +432,25 @@ pub async fn post_channel(
 }
 
 pub async fn post_save_outputs() -> impl IntoResponse {
+    defmt::info!("HTTP: POST /api/outputs/save -> writing configuration to Flash");
     let cfg = {
         let cfg_guard = APP_CONFIG.lock().await;
         *cfg_guard
     };
     match crate::flash::save_config(&cfg).await {
-        Ok(()) => (picoserve::response::StatusCode::OK, "ok"),
-        Err(()) => (picoserve::response::StatusCode::INTERNAL_SERVER_ERROR, "error"),
+        Ok(()) => {
+            defmt::info!("Flash save OK");
+            (picoserve::response::StatusCode::OK, "ok")
+        }
+        Err(()) => {
+            defmt::error!("Flash save FAILED");
+            (picoserve::response::StatusCode::INTERNAL_SERVER_ERROR, "error")
+        }
     }
 }
 
 pub async fn post_save_outputs_form() -> impl IntoResponse {
+    defmt::info!("HTTP: POST /outputs/save -> writing configuration to Flash");
     let cfg = {
         let cfg_guard = APP_CONFIG.lock().await;
         *cfg_guard
@@ -480,6 +500,7 @@ pub async fn post_channel_test(
 ) -> impl IntoResponse {
     if form.ch >= 1 && form.ch <= CHANNEL_COUNT {
         let raw_mode = if form.test != 0 { form.test } else { form.mode };
+        defmt::info!("HTTP: POST /api/test/channel -> ch {} test_mode {}", form.ch, raw_mode);
         let mut pattern = sacn_core::test_pattern::TestPattern::from_u8(raw_mode);
         let ch_idx = form.ch - 1;
 

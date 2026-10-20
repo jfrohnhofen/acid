@@ -411,11 +411,16 @@ async fn mdns_task(stack: Stack<'static>) {
 #[embassy_executor::task(pool_size = HTTP_TASKS)]
 async fn web_task(id: usize, stack: Stack<'static>) -> ! {
     let app = firmware::web::router();
-    let config = picoserve::Config::const_default();
+    let mut timeouts = picoserve::Timeouts::const_default();
+    timeouts.start_read_request = Duration::from_secs(10);
+    timeouts.read_request = Duration::from_secs(10);
+    timeouts.write = Duration::from_secs(15);
+    let config = picoserve::Config::new(timeouts);
     let mut tcp_rx = [0u8; 1024];
-    let mut tcp_tx = [0u8; 2048];
-    let mut http_buf = [0u8; 2048];
+    let mut tcp_tx = [0u8; 3072];
+    let mut http_buf = [0u8; 3072];
 
+    info!("HTTP: worker #{} started and listening on port {}", id, HTTP_PORT);
     picoserve::Server::new(&app, &config, &mut http_buf)
         .listen_and_serve(id, stack, HTTP_PORT, &mut tcp_rx, &mut tcp_tx)
         .await
@@ -522,6 +527,9 @@ async fn sacn_task(stack: Stack<'static>) -> ! {
                 match DataPacket::parse(&buf[..len]) {
                     Ok(pkt) => {
                         if pkt.start_code == 0x00 {
+                            if pkt.is_stream_terminated() {
+                                info!("sACN: stream terminated for universe {}", pkt.universe);
+                            }
                             let now = Instant::now();
                             UNIVERSE_STORE.lock(|s| {
                                 let mut store = s.borrow_mut();
@@ -754,6 +762,7 @@ async fn main(spawner: Spawner) {
     watchdog.start(Duration::from_millis(8000));
 
     let mut last = NetStatus::default();
+    let mut heartbeat_tick = 0u32;
     loop {
         // Feed watchdog only if Core 1 is actively rendering output frames
         if CORE1_HEARTBEAT.load(Ordering::Relaxed) {
@@ -793,6 +802,33 @@ async fn main(spawner: Spawner) {
             }
         }
         last = status;
+
+        heartbeat_tick = heartbeat_tick.wrapping_add(1);
+        if heartbeat_tick % 10 == 0 {
+            let (active_cnt, total_pkts) = UNIVERSE_STORE.lock(|s| {
+                let store = s.borrow();
+                let mut active = 0usize;
+                let mut pkts = 0u32;
+                let now = Instant::now();
+                for u in store.get_info() {
+                    pkts += u.packets_received;
+                    if let Some(t) = u.last_received {
+                        if now.duration_since(t).as_millis() <= 2500 && !u.terminated {
+                            active += 1;
+                        }
+                    }
+                }
+                (active, pkts)
+            });
+            info!(
+                "heartbeat: uptime {}s | link {} | sACN active streams: {} | total pkts: {}",
+                Instant::now().as_secs(),
+                status.link_up,
+                active_cnt,
+                total_pkts
+            );
+        }
+
         Timer::after_secs(1).await;
     }
 }
